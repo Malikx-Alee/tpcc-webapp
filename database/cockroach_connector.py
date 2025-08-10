@@ -227,8 +227,9 @@ class CockroachConnector(BaseDatabaseConnector):
                         else:
                             cursor.execute(query)
 
-                        # Fetch results if it's a SELECT query
-                        if query.strip().upper().startswith('SELECT'):
+                        # Fetch results if it's a SELECT query or has RETURNING clause
+                        query_upper = query.strip().upper()
+                        if query_upper.startswith('SELECT') or 'RETURNING' in query_upper:
                             operation_results = cursor.fetchall()
                             formatted_results = []
                             for row in operation_results:
@@ -268,7 +269,7 @@ class CockroachConnector(BaseDatabaseConnector):
         return self.provider_name
 
     def execute_new_order(
-        self, warehouse_id: int, district_id: int, customer_id: int, items: List[Dict[str, Any]]
+        self, warehouse_id: int, district_id: int, customer_id: int, items: List[Dict[str, Any]], region_created: str = None
     ) -> Dict[str, Any]:
         """
         Execute TPC-C New Order transaction
@@ -309,10 +310,10 @@ class CockroachConnector(BaseDatabaseConnector):
             all_local = 1 if all(item.get('supply_warehouse_id', warehouse_id) == warehouse_id for item in items) else 0
 
             insert_order_query = """
-                INSERT INTO "order" (o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO "order" (o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local, region_created)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            operations.append((insert_order_query, (order_id, district_id, warehouse_id, customer_id, order_entry_date, len(items), all_local)))
+            operations.append((insert_order_query, (order_id, district_id, warehouse_id, customer_id, order_entry_date, len(items), all_local, region_created)))
 
             # Insert into new_order table
             insert_new_order_query = """
@@ -321,7 +322,22 @@ class CockroachConnector(BaseDatabaseConnector):
             """
             operations.append((insert_new_order_query, (order_id, district_id, warehouse_id)))
 
-            # Process each order line
+            # Get item information first (outside transaction for simplicity)
+            item_info = {}
+            for item in items:
+                item_id = item['item_id']
+                if item_id not in item_info:
+                    item_query = """
+                        SELECT i_price, i_name, i_data
+                        FROM item
+                        WHERE i_id = %s
+                    """
+                    item_result = self.execute_query(item_query, (item_id,))
+                    if not item_result:
+                        return {"success": False, "error": f"Item {item_id} not found"}
+                    item_info[item_id] = item_result[0]
+
+            # Process each order line and add to operations
             total_amount = 0.0
             order_lines = []
 
@@ -331,17 +347,13 @@ class CockroachConnector(BaseDatabaseConnector):
                 quantity = item['quantity']
 
                 # Get item information
-                item_query = """
-                    SELECT i_price, i_name, i_data
-                    FROM item
-                    WHERE i_id = %s
-                """
-                item_result = self.execute_query(item_query, (item_id,))
-                if not item_result:
-                    return {"success": False, "error": f"Item {item_id} not found"}
+                item_data = item_info[item_id]
+                item_price = item_data['i_price']
+                item_name = item_data['i_name']
 
-                item_price = item_result[0]['i_price']
-                item_name = item_result[0]['i_name']
+                # Calculate line amount
+                line_amount = quantity * float(item_price)
+                total_amount += line_amount
 
                 # Update stock
                 stock_update_query = """
@@ -353,13 +365,8 @@ class CockroachConnector(BaseDatabaseConnector):
                     s_ytd = s_ytd + %s,
                     s_order_cnt = s_order_cnt + 1
                     WHERE s_i_id = %s AND s_w_id = %s
-                    RETURNING s_quantity, s_dist_01 as s_dist_info
                 """
                 operations.append((stock_update_query, (quantity, quantity, quantity, quantity, item_id, supply_warehouse_id)))
-
-                # Calculate line amount
-                line_amount = quantity * float(item_price)
-                total_amount += line_amount
 
                 # Insert order line
                 insert_order_line_query = """

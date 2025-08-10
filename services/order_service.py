@@ -32,40 +32,13 @@ class OrderService:
         try:
             # Execute the new order transaction
             result = self.db.execute_new_order(
-                warehouse_id, district_id, customer_id, items
+                warehouse_id, district_id, customer_id, items, self.region_name
             )
 
             if result["success"]:
                 # Add region information to the result
                 result["region_created"] = self.region_name
-
-                # Update the order with region information
-                try:
-                    # For Spanner, we need to use a different approach since it handles parameters differently
-                    from database.spanner_connector import SpannerConnector
-
-                    if isinstance(self.db, SpannerConnector):
-                        # For Spanner, we'll use the transaction-based approach within the connector
-                        # Skip the region update here since Spanner handles it differently
-                        logger.info(
-                            f"Spanner order created with region tracking: {self.region_name}"
-                        )
-                    else:
-                        # For other databases
-                        self.db.execute_query(
-                            "UPDATE orders SET region_created = %s WHERE o_id = %s AND o_d_id = %s AND o_w_id = %s",
-                            (
-                                self.region_name,
-                                result["order_id"],
-                                district_id,
-                                warehouse_id,
-                            ),
-                        )
-                        logger.info(f"Order region updated to: {self.region_name}")
-                except Exception as update_error:
-                    logger.warning(
-                        f"Failed to update region information: {str(update_error)}"
-                    )
+                logger.info(f"Order created with region tracking: {self.region_name}")
 
             return result
         except Exception as e:
