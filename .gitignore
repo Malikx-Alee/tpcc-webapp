@@ -125,6 +125,13 @@ dmypy.json
 *.json
 !deployment/gcp/.env.production
 
+# SSH/SSL Keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
 # Backup files
 *.bak
 *.backup
