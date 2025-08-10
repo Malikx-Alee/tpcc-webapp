@@ -1,0 +1,24 @@
+ssh -i "tpcc-webapp.pem" ec2-user@ec2-34-235-119-129.compute-1.amazonaws.com
+
+scp -i tpcc-webapp.pem -r /Users/ali/Downloads/tpcc-webapp ec2-34-235-119-129.compute-1.amazonaws.com:/home/ec2-user/
+
+scp -i tpcc-webapp.pem -r /Users/ali/Downloads/tpcc-webapp/database/cockroach_connector.py ec2-user@ec2-34-235-119-129.compute-1.amazonaws.com:/home/ec2-user/tpcc-webapp/database/cockroach_connector.py
+
+scp -i tpcc-webapp.pem -r /Users/ali/Downloads/tpcc-webapp/app.py ec2-user@ec2-34-235-119-129.compute-1.amazonaws.com:/home/ec2-user/tpcc-webapp/app.py
+
+
+aws ec2 copy-image \
+    --source-region us-east-1 \
+    --source-image-id ami-0af18d18d2927034b \
+    --region us-west-2 \
+    --name "tpcc-webapp-ami-west"
+
+
+
+sudo systemctl restart tpcc-webapp
+
+
+
+ssh -i "tpcc-webapp-west.pem" ec2-user@ec2-18-236-177-171.us-west-2.compute.amazonaws.com
+
+scp -i tpcc-webapp-west.pem -r /Users/ali/Downloads/tpcc-webapp/app.py ec2-user@ec2-18-236-177-171.us-west-2.compute.amazonaws.com:/home/ec2-user/tpcc-webapp/app.py

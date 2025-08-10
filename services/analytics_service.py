@@ -11,7 +11,7 @@ from database.connector_factory import create_study_connector
 logger = logging.getLogger(__name__)
 
 
-class StudyAnalyticsService:
+class AnalyticsService:
     """
     Simplified analytics service for UX study
 
@@ -19,10 +19,15 @@ class StudyAnalyticsService:
     that participants will implement during the study.
     """
 
-    def __init__(self):
+    def __init__(self, db_connector=None):
         """Initialize the study analytics service"""
-        self.connector = None
-        self._initialize_connector()
+        self.connector = db_connector
+        if not self.connector:
+            self._initialize_connector()
+        else:
+            logger.info(
+                f"📊 Study Analytics Service initialized with provided {self.connector.get_provider_name()} connector"
+            )
 
     def _initialize_connector(self):
         """Initialize the database connector for the study"""
@@ -111,7 +116,7 @@ class StudyAnalyticsService:
             # Get order count
             try:
                 result = self.connector.execute_query(
-                    "SELECT COUNT(*) as count FROM orders"
+                    "SELECT COUNT(*) as count FROM \"order\""
                 )
                 metrics["total_orders"] = result[0]["count"] if result else 0
             except Exception as e:
@@ -163,8 +168,8 @@ class StudyAnalyticsService:
 
             query = f"""
                 SELECT o_id, o_w_id, o_d_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local
-                FROM orders 
-                ORDER BY o_entry_d DESC 
+                FROM \"order\"
+                ORDER BY o_entry_d DESC
                 LIMIT {limit}
             """
 
@@ -229,6 +234,33 @@ class StudyAnalyticsService:
                 else "Unknown",
                 "inventory": [],
             }
+
+    def get_warehouses(self) -> list:
+        """
+        Get list of warehouses for dropdown filters
+
+        Returns:
+            list: List of warehouse dictionaries
+        """
+        if not self.connector:
+            return []
+
+        try:
+            if not self.connector.test_connection():
+                return []
+
+            query = """
+                SELECT w_id, w_name, w_city, w_state
+                FROM warehouse
+                ORDER BY w_id
+            """
+
+            result = self.connector.execute_query(query)
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to get warehouses: {str(e)}")
+            return []
 
     def _get_default_metrics(self) -> Dict[str, int]:
         """Get default metrics when database is not available"""

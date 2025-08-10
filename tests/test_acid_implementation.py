@@ -5,7 +5,7 @@ Test script for ACID compliance tests with real database operations
 
 import logging
 import sys
-from typing import Any, Dict, Union
+from typing import Any, Dict
 
 # Configure logging
 logging.basicConfig(
@@ -22,9 +22,6 @@ from dotenv import load_dotenv
 # Import required modules
 from tests.acid_tests import ACIDTests
 
-# Import Spanner-specific ACID tests
-from tests.spanner_acid_tests import SpannerACIDTests, run_spanner_acid_tests
-
 
 def test_consistency(provider: str = "google_spanner") -> Dict[str, Any]:
     """Test the consistency implementation"""
@@ -32,12 +29,8 @@ def test_consistency(provider: str = "google_spanner") -> Dict[str, Any]:
         print(f"🧪 Testing Consistency with {provider}...")
         connector = DatabaseConnectorFactory.create_connector(provider)
 
-        # Use appropriate ACID test implementation based on provider
-        acid_tests: Union[ACIDTests, SpannerACIDTests]
-        if connector.get_provider_name() == "Google Spanner":
-            acid_tests = SpannerACIDTests(connector)
-        else:
-            acid_tests = ACIDTests(connector)
+        # Use ACID test implementation
+        acid_tests = ACIDTests(connector)
 
         print(f"✅ ACID tests initialized for {acid_tests.provider_name}")
         print(f"✅ Test session ID: {acid_tests.test_id}")
@@ -48,9 +41,11 @@ def test_consistency(provider: str = "google_spanner") -> Dict[str, Any]:
 
         print("✅ Consistency Test Result:")
         print(f"   Status: {result['status']}")
-        print(f"   Provider: {result['provider']}")
-        print(f"   Description: {result['description']}")
+        print(f"   Provider: {result.get('provider', 'Unknown')}")
+        print(f"   Description: {result.get('description', 'N/A')}")
         print(f"   Duration: {result.get('duration', 'N/A')}")
+        if 'error' in result:
+            print(f"   Error: {result['error']}")
 
         if "constraint_tests" in result:
             print(f"   Constraint Tests: {len(result['constraint_tests'])} tests")
@@ -76,12 +71,8 @@ def test_atomicity(provider: str = "google_spanner") -> Dict[str, Any]:
         print(f"🧪 Testing Atomicity with {provider}...")
         connector = DatabaseConnectorFactory.create_connector(provider)
 
-        # Use appropriate ACID test implementation based on provider
-        acid_tests: Union[ACIDTests, SpannerACIDTests]
-        if connector.get_provider_name() == "Google Spanner":
-            acid_tests = SpannerACIDTests(connector)
-        else:
-            acid_tests = ACIDTests(connector)
+        # Use ACID test implementation
+        acid_tests = ACIDTests(connector)
 
         # Run atomicity test
         print("🔄 Running Atomicity Test...")
@@ -89,10 +80,12 @@ def test_atomicity(provider: str = "google_spanner") -> Dict[str, Any]:
 
         print("✅ Atomicity Test Result:")
         print(f"   Status: {result['status']}")
-        print(f"   Provider: {result['provider']}")
-        print(f"   Description: {result['description']}")
+        print(f"   Provider: {result.get('provider', 'Unknown')}")
+        print(f"   Description: {result.get('description', 'N/A')}")
         print(f"   Atomicity Verified: {result.get('atomicity_verified', False)}")
         print(f"   Duration: {result.get('duration', 'N/A')}")
+        if 'error' in result:
+            print(f"   Error: {result['error']}")
 
         print("🎉 Atomicity test completed successfully!")
         return result
@@ -111,12 +104,8 @@ def test_isolation(provider: str = "google_spanner") -> Dict[str, Any]:
         print(f"🧪 Testing Isolation with {provider}...")
         connector = DatabaseConnectorFactory.create_connector(provider)
 
-        # Use appropriate ACID test implementation based on provider
-        acid_tests: Union[ACIDTests, SpannerACIDTests]
-        if connector.get_provider_name() == "Google Spanner":
-            acid_tests = SpannerACIDTests(connector)
-        else:
-            acid_tests = ACIDTests(connector)
+        # Use ACID test implementation
+        acid_tests = ACIDTests(connector)
 
         # Run isolation test
         print("🔄 Running Isolation Test...")
@@ -124,9 +113,11 @@ def test_isolation(provider: str = "google_spanner") -> Dict[str, Any]:
 
         print("✅ Isolation Test Result:")
         print(f"   Status: {result['status']}")
-        print(f"   Provider: {result['provider']}")
-        print(f"   Description: {result['description']}")
+        print(f"   Provider: {result.get('provider', 'Unknown')}")
+        print(f"   Description: {result.get('description', 'N/A')}")
         print(f"   Duration: {result.get('duration', 'N/A')}")
+        if 'error' in result:
+            print(f"   Error: {result['error']}")
 
         if "isolation_tests" in result:
             print(f"   Isolation Tests: {len(result['isolation_tests'])} tests")
@@ -152,12 +143,8 @@ def test_durability(provider: str = "google_spanner") -> Dict[str, Any]:
         print(f"🧪 Testing Durability with {provider}...")
         connector = DatabaseConnectorFactory.create_connector(provider)
 
-        # Use appropriate ACID test implementation based on provider
-        acid_tests: Union[ACIDTests, SpannerACIDTests]
-        if connector.get_provider_name() == "Google Spanner":
-            acid_tests = SpannerACIDTests(connector)
-        else:
-            acid_tests = ACIDTests(connector)
+        # Use ACID test implementation
+        acid_tests = ACIDTests(connector)
 
         # Run durability test
         print("🔄 Running Durability Test...")
@@ -165,10 +152,12 @@ def test_durability(provider: str = "google_spanner") -> Dict[str, Any]:
 
         print("✅ Durability Test Result:")
         print(f"   Status: {result['status']}")
-        print(f"   Provider: {result['provider']}")
-        print(f"   Description: {result['description']}")
+        print(f"   Provider: {result.get('provider', 'Unknown')}")
+        print(f"   Description: {result.get('description', 'N/A')}")
         print(f"   Data Persisted: {result.get('details', '')}")
         print(f"   Duration: {result.get('duration', 'N/A')}")
+        if 'error' in result:
+            print(f"   Error: {result['error']}")
 
         print("🎉 Durability test completed successfully!")
         return result
@@ -187,13 +176,9 @@ def test_all(provider: str = "google_spanner") -> Dict[str, Any]:
         print(f"🧪 Running all ACID tests with {provider}...")
         connector = DatabaseConnectorFactory.create_connector(provider)
 
-        # Use run_spanner_acid_tests for Google Spanner
-        if connector.get_provider_name() == "Google Spanner":
-            print("🔄 Using Spanner-specific ACID tests...")
-            result = run_spanner_acid_tests(connector)
-        else:
-            acid_tests = ACIDTests(connector)
-            result = acid_tests.run_all_tests()
+        # Use ACID test implementation
+        acid_tests = ACIDTests(connector)
+        result = acid_tests.run_all_tests()
 
         print("✅ All ACID Tests Result:")
         print(f"   Provider: {result['provider']}")

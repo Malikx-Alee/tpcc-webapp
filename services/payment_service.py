@@ -37,9 +37,45 @@ class PaymentService:
     ) -> List[Dict[str, Any]]:
         """Get payment history with optional filters"""
         try:
-            return self.db.get_payment_history(
-                warehouse_id, district_id, customer_id, limit
-            )
+            # Build WHERE clause based on filters
+            where_conditions = []
+            params = []
+
+            if warehouse_id is not None:
+                where_conditions.append("h.h_w_id = %s")
+                params.append(warehouse_id)
+
+            if district_id is not None:
+                where_conditions.append("h.h_d_id = %s")
+                params.append(district_id)
+
+            if customer_id is not None:
+                where_conditions.append("h.h_c_id = %s")
+                params.append(customer_id)
+
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+
+            # Get payment history
+            query = f"""
+                SELECT h.h_c_id, h.h_c_d_id, h.h_c_w_id, h.h_d_id, h.h_w_id,
+                       h.h_date, h.h_amount, h.h_data,
+                       c.c_first, c.c_middle, c.c_last,
+                       w.w_name, d.d_name
+                FROM history h
+                JOIN customer c ON c.c_w_id = h.h_c_w_id AND c.c_d_id = h.h_c_d_id AND c.c_id = h.h_c_id
+                JOIN warehouse w ON w.w_id = h.h_w_id
+                JOIN district d ON d.d_w_id = h.h_d_id AND d.d_id = h.h_d_id
+                {where_clause}
+                ORDER BY h.h_date DESC
+                LIMIT %s
+            """
+
+            query_params = list(params) + [limit]
+            result = self.db.execute_query(query, tuple(query_params))
+            return result
+
         except Exception as e:
             logger.error(f"Get payment history service error: {str(e)}")
             return []
@@ -54,9 +90,71 @@ class PaymentService:
     ) -> Dict[str, Any]:
         """Get payment history with pagination"""
         try:
-            return self.db.get_payment_history_paginated(
-                warehouse_id, district_id, customer_id, limit, offset
-            )
+            # Build WHERE clause based on filters
+            where_conditions = []
+            params = []
+
+            if warehouse_id is not None:
+                where_conditions.append("h.h_w_id = %s")
+                params.append(warehouse_id)
+
+            if district_id is not None:
+                where_conditions.append("h.h_d_id = %s")
+                params.append(district_id)
+
+            if customer_id is not None:
+                where_conditions.append("h.h_c_id = %s")
+                params.append(customer_id)
+
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+
+            # Get total count for pagination
+            count_query = f"""
+                SELECT COUNT(*) as total_count
+                FROM history h
+                JOIN customer c ON c.c_w_id = h.h_c_w_id AND c.c_d_id = h.h_c_d_id AND c.c_id = h.h_c_id
+                JOIN warehouse w ON w.w_id = h.h_w_id
+                JOIN district d ON d.d_w_id = h.h_d_id AND d.d_id = h.h_d_id
+                {where_clause}
+            """
+
+            count_result = self.db.execute_query(count_query, tuple(params))
+            total_count = count_result[0]["total_count"] if count_result else 0
+
+            # Get payment history with pagination
+            payments_query = f"""
+                SELECT h.h_c_id, h.h_c_d_id, h.h_c_w_id, h.h_d_id, h.h_w_id,
+                       h.h_date, h.h_amount, h.h_data,
+                       c.c_first, c.c_middle, c.c_last,
+                       w.w_name, d.d_name
+                FROM history h
+                JOIN customer c ON c.c_w_id = h.h_c_w_id AND c.c_d_id = h.h_c_d_id AND c.c_id = h.h_c_id
+                JOIN warehouse w ON w.w_id = h.h_w_id
+                JOIN district d ON d.d_w_id = h.h_d_id AND d.d_id = h.h_d_id
+                {where_clause}
+                ORDER BY h.h_date DESC
+                LIMIT %s OFFSET %s
+            """
+
+            # Add limit and offset to params
+            query_params = list(params) + [limit, offset]
+            payments_result = self.db.execute_query(payments_query, tuple(query_params))
+
+            # Calculate pagination info
+            has_next = (offset + limit) < total_count
+            has_prev = offset > 0
+
+            return {
+                "payments": payments_result,
+                "total_count": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_next": has_next,
+                "has_prev": has_prev,
+            }
+
         except Exception as e:
             logger.error(f"Get payment history paginated service error: {str(e)}")
             return {

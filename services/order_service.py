@@ -77,7 +77,33 @@ class OrderService:
     ) -> Dict[str, Any]:
         """Get order status for a customer"""
         try:
-            return self.db.get_order_status(warehouse_id, district_id, customer_id)
+            # Get the most recent order for the customer
+            query = """
+                SELECT o.o_id, o.o_w_id, o.o_d_id, o.o_c_id, o.o_entry_d, o.o_carrier_id,
+                       c.c_first, c.c_middle, c.c_last,
+                       CASE WHEN no.no_o_id IS NOT NULL THEN 'New' ELSE 'Delivered' END as status
+                FROM "order" o
+                JOIN customer c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
+                LEFT JOIN new_order no ON no.no_w_id = o.o_w_id AND no.no_d_id = o.o_d_id AND no.no_o_id = o.o_id
+                WHERE o.o_w_id = %s AND o.o_d_id = %s AND o.o_c_id = %s
+                ORDER BY o.o_entry_d DESC
+                LIMIT 1
+            """
+
+            result = self.db.execute_query(query, (warehouse_id, district_id, customer_id))
+
+            if result:
+                order = result[0]
+                return {
+                    "success": True,
+                    "order": order
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "No orders found for this customer"
+                }
+
         except Exception as e:
             logger.error(f"Order status service error: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -101,14 +127,74 @@ class OrderService:
     ) -> Dict[str, Any]:
         """Get orders with optional filters and pagination"""
         try:
-            return self.db.get_orders(
-                warehouse_id=warehouse_id,
-                district_id=district_id,
-                customer_id=customer_id,
-                status=status,
-                limit=limit,
-                offset=offset,
-            )
+            # Build WHERE clause based on filters
+            where_conditions = []
+            params = []
+
+            if warehouse_id is not None:
+                where_conditions.append("o.o_w_id = %s")
+                params.append(warehouse_id)
+
+            if district_id is not None:
+                where_conditions.append("o.o_d_id = %s")
+                params.append(district_id)
+
+            if customer_id is not None:
+                where_conditions.append("o.o_c_id = %s")
+                params.append(customer_id)
+
+            # Handle status filter
+            if status == "New":
+                where_conditions.append("no.no_o_id IS NOT NULL")
+            elif status == "Delivered":
+                where_conditions.append("no.no_o_id IS NULL")
+
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+
+            # Get total count for pagination
+            count_query = f"""
+                SELECT COUNT(*) as total_count
+                FROM "order" o
+                {where_clause}
+            """
+
+            count_result = self.db.execute_query(count_query, tuple(params))
+            total_count = count_result[0]["total_count"] if count_result else 0
+
+            # Get orders with pagination
+            orders_query = f"""
+                SELECT o.o_id, o.o_w_id, o.o_d_id, o.o_c_id, o.o_entry_d, o.o_ol_cnt, o.o_all_local,
+                       c.c_first, c.c_middle, c.c_last,
+                       w.w_name,
+                       CASE WHEN no.no_o_id IS NOT NULL THEN 'New' ELSE 'Delivered' END as status
+                FROM "order" o
+                JOIN customer c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
+                JOIN warehouse w ON w.w_id = o.o_w_id
+                LEFT JOIN new_order no ON no.no_w_id = o.o_w_id AND no.no_d_id = o.o_d_id AND no.no_o_id = o.o_id
+                {where_clause}
+                ORDER BY o.o_entry_d DESC
+                LIMIT %s OFFSET %s
+            """
+
+            # Add limit and offset to params
+            query_params = list(params) + [limit, offset]
+            orders_result = self.db.execute_query(orders_query, tuple(query_params))
+
+            # Calculate pagination info
+            has_next = (offset + limit) < total_count
+            has_prev = offset > 0
+
+            return {
+                "orders": orders_result,
+                "total_count": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_next": has_next,
+                "has_prev": has_prev,
+            }
+
         except Exception as e:
             logger.error(f"Get orders service error: {str(e)}")
             return {
@@ -129,7 +215,7 @@ class OrderService:
             order_query = """
                 SELECT o.*, c.c_first, c.c_middle, c.c_last,
                        CASE WHEN no.no_o_id IS NOT NULL THEN 'New' ELSE 'Delivered' END as status
-                FROM orders o
+                FROM "order" o
                 JOIN customer c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
                 LEFT JOIN new_order no ON no.no_w_id = o.o_w_id AND no.no_d_id = o.o_d_id AND no.no_o_id = o.o_id
                 WHERE o.o_w_id = %s AND o.o_d_id = %s AND o.o_id = %s
@@ -179,7 +265,7 @@ class OrderService:
                        c.c_first, c.c_middle, c.c_last,
                        w.w_name,
                        CASE WHEN no.no_o_id IS NOT NULL THEN 'New' ELSE 'Delivered' END as status
-                FROM orders o
+                FROM "order" o
                 JOIN customer c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
                 JOIN warehouse w ON w.w_id = o.o_w_id
                 LEFT JOIN new_order no ON no.no_w_id = o.o_w_id AND no.no_d_id = o.o_d_id AND no.no_o_id = o.o_id
@@ -209,14 +295,14 @@ class OrderService:
                 params.append(warehouse_id)
 
             # Total orders
-            total_query = f"SELECT COUNT(*) as count FROM orders {where_clause}"
+            total_query = f"SELECT COUNT(*) as count FROM \"order\" {where_clause}"
             total_result = self.db.execute_query(total_query, tuple(params))
             stats["total_orders"] = total_result[0]["count"] if total_result else 0
 
             # New orders
             new_query = f"""
-                SELECT COUNT(*) as count 
-                FROM orders o 
+                SELECT COUNT(*) as count
+                FROM "order" o
                 JOIN new_order no ON no.no_w_id = o.o_w_id AND no.no_d_id = o.o_d_id AND no.no_o_id = o.o_id
                 {where_clause}
             """
@@ -228,8 +314,8 @@ class OrderService:
 
             # Orders today
             today_query = f"""
-                SELECT COUNT(*) as count 
-                FROM orders 
+                SELECT COUNT(*) as count
+                FROM "order"
                 {where_clause} AND DATE(o_entry_d) = CURRENT_DATE
             """
             today_result = self.db.execute_query(today_query, tuple(params))
@@ -241,7 +327,7 @@ class OrderService:
                 FROM (
                     SELECT SUM(ol_amount) as total_amount
                     FROM order_line ol
-                    JOIN orders o ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
+                    JOIN "order" o ON o.o_w_id = ol.ol_w_id AND o.o_d_id = ol.ol_d_id AND o.o_id = ol.ol_o_id
                     {where_clause.replace("o_w_id", "o.o_w_id")}
                     GROUP BY ol.ol_w_id, ol.ol_d_id, ol.ol_o_id
                 ) as order_totals

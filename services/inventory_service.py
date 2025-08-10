@@ -35,9 +35,43 @@ class InventoryService:
     ) -> List[Dict[str, Any]]:
         """Get inventory data with optional filters"""
         try:
-            return self.db.get_inventory(
-                warehouse_id, low_stock_threshold, item_search, limit
-            )
+            # Build WHERE clause based on filters
+            where_conditions = []
+            params = []
+
+            if warehouse_id is not None:
+                where_conditions.append("s.s_w_id = %s")
+                params.append(warehouse_id)
+
+            if low_stock_threshold is not None and low_stock_threshold > 0:
+                where_conditions.append("s.s_quantity < %s")
+                params.append(low_stock_threshold)
+
+            if item_search:
+                where_conditions.append("(i.i_name ILIKE %s OR CAST(i.i_id AS TEXT) LIKE %s)")
+                search_pattern = f"%{item_search}%"
+                params.extend([search_pattern, search_pattern])
+
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+
+            # Get inventory data
+            query = f"""
+                SELECT s.s_i_id, i.i_name, i.i_data, s.s_w_id, s.s_quantity, i.i_price,
+                       w.w_name, s.s_ytd, s.s_order_cnt, s.s_remote_cnt
+                FROM stock s
+                JOIN item i ON s.s_i_id = i.i_id
+                JOIN warehouse w ON s.s_w_id = w.w_id
+                {where_clause}
+                ORDER BY s.s_quantity ASC, i.i_name
+                LIMIT %s
+            """
+
+            query_params = list(params) + [limit]
+            result = self.db.execute_query(query, tuple(query_params))
+            return result
+
         except Exception as e:
             logger.error(f"Get inventory service error: {str(e)}")
             return []
@@ -52,9 +86,68 @@ class InventoryService:
     ) -> Dict[str, Any]:
         """Get inventory data with pagination"""
         try:
-            return self.db.get_inventory_paginated(
-                warehouse_id, low_stock_threshold, item_search, limit, offset
-            )
+            # Build WHERE clause based on filters
+            where_conditions = []
+            params = []
+
+            if warehouse_id is not None:
+                where_conditions.append("s.s_w_id = %s")
+                params.append(warehouse_id)
+
+            if low_stock_threshold is not None and low_stock_threshold > 0:
+                where_conditions.append("s.s_quantity < %s")
+                params.append(low_stock_threshold)
+
+            if item_search:
+                where_conditions.append("(i.i_name ILIKE %s OR CAST(i.i_id AS TEXT) LIKE %s)")
+                search_pattern = f"%{item_search}%"
+                params.extend([search_pattern, search_pattern])
+
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+
+            # Get total count for pagination
+            count_query = f"""
+                SELECT COUNT(*) as total_count
+                FROM stock s
+                JOIN item i ON s.s_i_id = i.i_id
+                JOIN warehouse w ON s.s_w_id = w.w_id
+                {where_clause}
+            """
+
+            count_result = self.db.execute_query(count_query, tuple(params))
+            total_count = count_result[0]["total_count"] if count_result else 0
+
+            # Get inventory data with pagination
+            inventory_query = f"""
+                SELECT s.s_i_id, i.i_name, i.i_data, s.s_w_id, s.s_quantity, i.i_price,
+                       w.w_name, s.s_ytd, s.s_order_cnt, s.s_remote_cnt
+                FROM stock s
+                JOIN item i ON s.s_i_id = i.i_id
+                JOIN warehouse w ON s.s_w_id = w.w_id
+                {where_clause}
+                ORDER BY s.s_quantity ASC, i.i_name
+                LIMIT %s OFFSET %s
+            """
+
+            # Add limit and offset to params
+            query_params = list(params) + [limit, offset]
+            inventory_result = self.db.execute_query(inventory_query, tuple(query_params))
+
+            # Calculate pagination info
+            has_next = (offset + limit) < total_count
+            has_prev = offset > 0
+
+            return {
+                "inventory": inventory_result,
+                "total_count": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_next": has_next,
+                "has_prev": has_prev,
+            }
+
         except Exception as e:
             logger.error(f"Get inventory paginated service error: {str(e)}")
             return {

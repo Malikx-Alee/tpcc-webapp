@@ -82,7 +82,16 @@ def dashboard():
         # Get dashboard metrics
         logger.info("   Fetching dashboard metrics...")
         # breakpoint()
-        metrics = analytics_service.get_dashboard_metrics()
+        metrics_result = analytics_service.get_dashboard_metrics()
+        logger.info(f"   Dashboard metrics result: {metrics_result}")
+
+        # Extract the actual metrics from the result
+        if metrics_result.get("success"):
+            metrics = metrics_result.get("metrics", {})
+        else:
+            metrics = metrics_result.get("metrics", {})
+            logger.warning(f"   Dashboard metrics error: {metrics_result.get('error', 'Unknown error')}")
+
         logger.info(f"   ✅ Dashboard metrics retrieved: {len(metrics)} metrics")
 
         return render_template(
@@ -213,7 +222,7 @@ def inventory():
 
         # Get filter parameters
         warehouse_id = request.args.get("warehouse_id", type=int)
-        low_stock_threshold = request.args.get("threshold", 10, type=int)
+        low_stock_threshold = request.args.get("threshold", type=int)  # Default to None to show all inventory
         item_search = request.args.get("item_search")
         limit = request.args.get("limit", 100, type=int)
         page = request.args.get("page", 1, type=int)
@@ -275,8 +284,35 @@ def inventory():
     except Exception as e:
         logger.error(f"❌ Inventory page error: {str(e)}")
         flash(f"Error loading inventory: {str(e)}", "error")
+
+        # Ensure we have proper default values for template variables
+        warehouse_id = request.args.get("warehouse_id", type=int)
+        low_stock_threshold = request.args.get("threshold", type=int)
+        item_search = request.args.get("item_search")
+        limit = request.args.get("limit", 100, type=int)
+
         return render_template(
-            "inventory.html", inventory=[], warehouses=[], pagination={}
+            "inventory.html",
+            inventory=[],
+            warehouses=[],
+            pagination={
+                "page": 1,
+                "limit": limit,
+                "total_count": 0,
+                "total_pages": 1,
+                "has_prev": False,
+                "has_next": False,
+                "prev_page": None,
+                "next_page": None,
+                "start_item": 0,
+                "end_item": 0,
+            },
+            filters={
+                "warehouse_id": warehouse_id,
+                "threshold": low_stock_threshold,
+                "item_search": item_search,
+                "limit": limit,
+            },
         )
 
 
@@ -670,12 +706,12 @@ def api_test_multi_region_orders_by_region():
 
         # Get orders with region information
         query = """
-            SELECT 
+            SELECT
                 COALESCE(region_created, 'unknown') as region,
                 COUNT(*) as order_count,
                 MIN(o_entry_d) as first_order,
                 MAX(o_entry_d) as last_order
-            FROM orders 
+            FROM "order"
             GROUP BY COALESCE(region_created, 'unknown')
             ORDER BY order_count DESC
         """
@@ -689,10 +725,10 @@ def api_test_multi_region_orders_by_region():
                 {
                     "region": row["region"],
                     "order_count": row["order_count"],
-                    "first_order": row["first_order"].isoformat()
+                    "first_order": row["first_order"]
                     if row["first_order"]
                     else None,
-                    "last_order": row["last_order"].isoformat()
+                    "last_order": row["last_order"]
                     if row["last_order"]
                     else None,
                 }
@@ -738,7 +774,7 @@ def api_test_multi_region_recent_orders():
                 c.c_middle,
                 c.c_last,
                 CASE WHEN new_ord.no_o_id IS NOT NULL THEN 'New' ELSE 'Delivered' END as status
-            FROM orders o
+            FROM "order" o
             JOIN customer c ON c.c_w_id = o.o_w_id AND c.c_d_id = o.o_d_id AND c.c_id = o.o_c_id
             LEFT JOIN new_order new_ord ON new_ord.no_w_id = o.o_w_id AND new_ord.no_d_id = o.o_d_id AND new_ord.no_o_id = o.o_id
             ORDER BY o.o_entry_d DESC
@@ -756,7 +792,7 @@ def api_test_multi_region_recent_orders():
                     "warehouse_id": row["o_w_id"],
                     "district_id": row["o_d_id"],
                     "customer_id": row["o_c_id"],
-                    "order_date": row["o_entry_d"].isoformat()
+                    "order_date": row["o_entry_d"]
                     if row["o_entry_d"]
                     else None,
                     "region_created": row["region_created"],

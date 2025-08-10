@@ -45,7 +45,7 @@ def main():
         # Check for TPC-C specific tables
         print("\n🏪 Checking for TPC-C tables...")
         tpcc_tables = ['warehouse', 'district', 'customer', 'order', 'order_line', 'item', 'stock', 'new_order', 'history']
-        
+
         for table_name in tpcc_tables:
             try:
                 count_query = f"SELECT COUNT(*) as count FROM {table_name}"
@@ -54,6 +54,25 @@ def main():
                 print(f"  ✅ {table_name}: {count} rows")
             except Exception as e:
                 print(f"  ❌ {table_name}: {str(e)}")
+
+        # Check item table columns
+        print("\n📋 Checking item table columns...")
+        try:
+            columns_query = """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = 'item' AND table_schema = 'public'
+                ORDER BY ordinal_position
+            """
+            columns = connector.execute_query(columns_query)
+            if columns:
+                print("Item table columns:")
+                for col in columns:
+                    print(f"  - {col['column_name']} ({col['data_type']})")
+            else:
+                print("No columns found for item table")
+        except Exception as e:
+            print(f"Error checking item columns: {str(e)}")
         
         # Close connection
         connector.close_connection()
